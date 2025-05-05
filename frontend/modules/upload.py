@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 
+
 def run():
     st.header("Загрузка датасета")
     uploaded_file = st.file_uploader("Выберите CSV-файл с данными", type=["csv"])
@@ -14,4 +15,3 @@ def run():
     st.subheader("Статистика признаков")
     st.write(df.describe())
     st.session_state.df = df
-    
