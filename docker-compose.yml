@@ -3,7 +3,9 @@ version: '3.8'
 
 services:
   backend:
-    build: ./backend/app
+    build:
+      context: ./backend
+      dockerfile: Dockerfile 
     container_name: backend
     entrypoint:
       - sh
@@ -12,7 +14,7 @@ services:
         mkdir -p /logs
         chmod 777 /logs
 
-        exec stdbuf -oL -eL uvicorn main:app \
+        exec stdbuf -oL -eL uvicorn app.main:app \
           --host 0.0.0.0 --port 8000 \
           >> /logs/backend.log 2>&1
     environment:
