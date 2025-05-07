@@ -27,7 +27,9 @@ services:
       - network
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile 
     container_name: frontend
     entrypoint:
       - sh
