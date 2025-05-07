@@ -1,0 +1,57 @@
+
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend/app
+    container_name: backend
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mkdir -p /logs
+        chmod 777 /logs
+
+        exec stdbuf -oL -eL uvicorn main:app \
+          --host 0.0.0.0 --port 8000 \
+          >> /logs/backend.log 2>&1
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/logs
+    logging:
+      driver: "none"
+    networks:
+      - network
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mkdir -p /logs
+        chmod 777 /logs
+
+        exec stdbuf -oL -eL streamlit run app.py \
+          --server.address=0.0.0.0 --server.port=8501 \
+          >> /logs/frontend.log 2>&1
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://backend:8000
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - backend
+    volumes:
+      - ./logs:/logs
+    logging:
+      driver: "none"
+    networks:
+      - network
+
+networks:
+  network:
+    driver: bridge
+
