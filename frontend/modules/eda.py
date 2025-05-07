@@ -3,6 +3,10 @@ import plotly.express as px
 
 
 def run():
+    """
+    Streamlit-страница «EDA»: строит гистограммы, scatter-plot и
+    корреляционную матрицу по загруженному DataFrame.
+    """
     st.header("EDA / Анализ данных")
     df = st.session_state.get("df")
     if df is None:

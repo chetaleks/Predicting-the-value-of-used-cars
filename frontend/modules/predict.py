@@ -3,7 +3,10 @@ import pandas as pd
 import numpy as np
 from api_client import get_models, set_model, predict_json, predict_csv
 
-# Поля CarFeatures для формы
+"""
+Страница «Predict»: рисует форму с полями CarFeatures или
+позволяет загрузить CSV для пакетного предсказания.
+"""
 FEATURE_FIELDS = [
     ("production_year", int, 2020),
     ("mileage", int, 50000),
@@ -33,6 +36,16 @@ FEATURE_FIELDS = [
 
 
 def run():
+    """
+    Streamlit-страница «Predict»:
+    1. Получает список моделей с бэкенда и позволяет
+       установить активную модель.
+    2. Дает выбор режима инференса:
+       – одиночный JSON-ввод всех полей CarFeatures;
+       – пакетный ввод через CSV-файл.
+    3. Отправляет запросы к эндпоинтам /predict/json или /predict/csv
+       и отображает результат (список предсказанных цен).
+    """
     st.header("Предсказание цены")
 
     # Выбор модели

@@ -6,11 +6,14 @@ from api_client import get_models, fit_model_json, fit_model_csv
 
 
 def normalize_record(record: dict):
-    import numpy as _np
-
+    """
+    Приводит запись из DataFrame к JSON-совместимому виду:
+    - заменяет NaN/inf на None,
+    - numpy-типы на чистые Python int/float.
+    """
     clean = {}
     for k, v in record.items():
-        if v is None or (isinstance(v, float) and (_np.isnan(v) or _np.isinf(v))):
+        if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
             clean[k] = None
         elif isinstance(v, (pd._libs.interval.Interval,)):
             clean[k] = str(v)
@@ -22,6 +25,11 @@ def normalize_record(record: dict):
 
 
 def run():
+    """
+    Streamlit-страница «Train»: рисует UI для загрузки гиперпараметров
+    и запускает обучение модели через API.
+    С поддержкой двух режимов: JSON и CSV.
+    """
     st.header("Обучение модели на вашем датасете")
     df = st.session_state.get("df")
     if df is None:
@@ -31,10 +39,19 @@ def run():
     alpha = st.number_input("Alpha", value=1.0, step=0.1)
     max_iter = st.number_input("Max iter", value=100, step=10)
     solver = st.selectbox(
-    "Solver",
-    ["auto", "svd", "sag", "saga", "lbfgs", "sparse_cg", "lsqr", "cholesky"],
-    index=0
-)
+        "Solver",
+        [
+            "auto",
+            "svd",
+            "sag",
+            "saga",
+            "lbfgs",
+            "sparse_cg",
+            "lsqr",
+            "cholesky",
+        ],
+        index=0,
+    )
 
     mode = st.radio("Режим подачи данных", ["JSON-параметры", "CSV-файл"], index=0)
 

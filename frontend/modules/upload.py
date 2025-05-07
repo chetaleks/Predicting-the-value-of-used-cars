@@ -3,6 +3,9 @@ import pandas as pd
 
 
 def run():
+    """
+    Streamlit-страница «Upload»: загрузка CSV и сохранение его в session_state.
+    """
     st.header("Загрузка датасета")
     uploaded_file = st.file_uploader("Выберите CSV-файл с данными", type=["csv"])
     if not uploaded_file:
