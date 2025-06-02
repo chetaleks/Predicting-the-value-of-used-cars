@@ -1,0 +1,103 @@
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile 
+    container_name: backend
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mkdir -p /logs && chmod 777 /logs
+        exec stdbuf -oL -eL uvicorn app.main:app \
+          --host 0.0.0.0 --port 8000 \
+          >> /logs/backend.log 2>&1
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/logs
+    logging:
+      driver: none
+    networks:
+      - network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile 
+    container_name: frontend
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mkdir -p /logs && chmod 777 /logs
+        exec stdbuf -oL -eL streamlit run app.py \
+          --server.address=0.0.0.0 --server.port=8501 \
+          >> /logs/frontend.log 2>&1
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://backend:8000
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - backend
+    volumes:
+      - ./logs:/logs
+    logging:
+      driver: none
+    networks:
+      - network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    mem_limit: 1g
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - network
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.0
+    container_name: filebeat
+    user: root
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/logs:ro
+    networks:
+      - network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - network
+
+volumes:
+  es_data:
+
+networks:
+  network:
+    driver: bridge
+
