@@ -28,7 +28,6 @@ FEATURE_FIELDS = [
     ("price", float, 0.0),
     ("price_segment", str, ""),
     ("auto_class", str, ""),
-    ("horse_power", int, 100),
     ("tags", str, ""),
     ("equipment", str, ""),
     ("complectation_available_options", str, ""),
@@ -50,9 +49,8 @@ def run():
 
     # Выбор модели
     models = get_models()
-    model_display = [f"{m['name']} ({m['id']})" for m in models]
-    model_map = {model_display[i]: models[i]["id"] for i in range(len(models))}
-    choice = st.selectbox("Выберите модель", model_display)
+    model_map = {m["name"]: m["id"] for m in models}
+    choice = st.selectbox("Выберите модель", list(model_map.keys()))
     if st.button("Установить модель"):
         set_model(model_map[choice])
         st.success(f"Активная модель: {choice}")

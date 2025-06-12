@@ -26,7 +26,7 @@ from .schemas import (
 )
 from .train_process import _start_training
 from .paths import MODELS_DIR
-
+from .state import shared_state
 from . import (
     model_trainer as _mt,
 )  # Чтобы установить инициализированную модель
@@ -35,12 +35,6 @@ from . import (
 sys.modules["model_trainer"] = _mt  # Чтобы установить инициализированную модель
 
 pd.set_option("future.no_silent_downcasting", True)
-
-shared_state = {
-    "models": {},           # обычный словарь
-    "active_model_id": None
-}
-
 
 STANDARD_MODELS = {
     "final_model",
