@@ -50,8 +50,9 @@ def run():
 
     # Выбор модели
     models = get_models()
-    model_map = {m["name"]: m["id"] for m in models}
-    choice = st.selectbox("Выберите модель", list(model_map.keys()))
+    model_display = [f"{m['name']} ({m['id']})" for m in models]
+    model_map = {model_display[i]: models[i]["id"] for i in range(len(models))}
+    choice = st.selectbox("Выберите модель", model_display)
     if st.button("Установить модель"):
         set_model(model_map[choice])
         st.success(f"Активная модель: {choice}")

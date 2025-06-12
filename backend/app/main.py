@@ -1,6 +1,7 @@
 import json
 import sys
 import uuid
+import traceback
 from contextlib import asynccontextmanager
 from multiprocessing import Manager
 from pathlib import Path
@@ -15,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 from sklearn.linear_model import Ridge
 
-from .helper import check_csv_file, get_active_model_path
+from .helper import check_csv_file, get_active_model_path, prepare_new_features
 from .schemas import (
     CarFeatures,
     HyperParams,
@@ -35,74 +36,57 @@ sys.modules["model_trainer"] = _mt  # Чтобы установить иници
 
 pd.set_option("future.no_silent_downcasting", True)
 
-manager = Manager()
-shared_state = manager.dict()
-shared_state["models"] = manager.dict()
-shared_state["active_model_id"] = None
+shared_state = {
+    "models": {},           # обычный словарь
+    "active_model_id": None
+}
+
+STANDARD_MODELS = {
+    "final_model",
+    "catboost_pipeline",
+    "catboost_pipeline_old",
+    "lgbm_pipeline",
+    "lgbm_pipeline_old",
+}
+
+NEW_MODEL_IDS = {"catboost_pipeline", "lgbm_pipeline"}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Контекстный менеджер жизненного цикла приложения
-    -Сначала создаем директории `models` и `logs`, если их нет.
-    -Загружаем предварительно обученную модель из `models/final_model.pkl`
-    -Если нет модели создаем новую модель `Ridge()` и сохраняем"""
-    try:
-        MODELS_DIR.mkdir(exist_ok=True, parents=True)
-        print("Приложение запущено")
+    MODELS_DIR.mkdir(exist_ok=True, parents=True)
+    print("Приложение запущено")
 
-        initial_model_path = MODELS_DIR  / "final_model.pkl"
+    # Очищаем старые записи
+    shared_state["models"].clear()
 
-        if initial_model_path.exists():
-            # Загрузка предобученной модели
-            model = joblib.load(initial_model_path)
-            print(f"Загружена начальная модель из {str(initial_model_path.absolute())}")
-        else:
-            # Создание новой модели, если файла нет
-            model = Ridge()
-            joblib.dump(model, initial_model_path)
-            print("Создана новая начальная модель, так как final_model.pkl не найден")
-
-        # Генерируем уникальный id, сохраняем в `shared_state`,
-        # путь к файлу модели, параметры и метрики
-
-        initial_model_id = str(uuid.uuid4())
-        shared_state["models"][initial_model_id] = {
-            "model_path": str(initial_model_path),
-            "params": getattr(model, "params", {}),
-            "metrics": getattr(model, "metrics", {"r2": 0.0}),
+    # Подгружаем все .pkl из папки
+    for model_file in MODELS_DIR.glob("*.pkl"):
+        model_id = model_file.stem
+        shared_state["models"][model_id] = {
+            "model_path": str(model_file),
+            "params": {},
+            "metrics": {"r2": 0.0},
         }
+        print(f"Подгружена модель: {model_id}")
 
-        shared_state["active_model_id"] = initial_model_id
-
-        print("Приложение успешно запущено")
-
-    except Exception as e:
-        print("Ошибка:", str(e))
-        raise
+    # Устанавливаем первую модель активной, если ещё нет
+    if shared_state["active_model_id"] is None and shared_state["models"]:
+        shared_state["active_model_id"] = next(iter(shared_state["models"]))
+        print("Активная модель:", shared_state["active_model_id"])
 
     yield
 
-    # После завершения работы,
-    # удаляем все модели и информацию о них, кроме изначальной
-
-    try:
-        print("Начата процедура очистки...")
-
-        for model_id in list(shared_state["models"].keys()):
-            model_path = Path(shared_state["models"][model_id].get("model_path", ""))
-            if model_path.exists() and model_path.name != "final_model.pkl":
-                try:
-                    model_path.unlink()
-                    print("Удалена модель:", str(model_path))
-                except Exception as e:
-                    print("Ошибка удаления:", str(model_path), e)
-
-        shared_state["models"].clear()
-        print("Работа приложения остановлена")
-
-    except Exception as e:
-        print("Ошибка при очистке:", e)
-        raise
+    # По завершении — удаляем все .pkl кроме стандартных
+    print("Начата процедура очистки нестандартных моделей...")
+    for model_file in MODELS_DIR.glob("*.pkl"):
+        model_name = model_file.stem  # без .pkl
+        if model_name not in STANDARD_MODELS:
+            try:
+                model_file.unlink()
+                print(f"Удалена нестандартная модель: {model_file.name}")
+            except Exception as e:
+                print(f"Ошибка при удалении {model_file.name}: {e}")
+    print("Очистка завершена")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -129,6 +113,12 @@ async def fit_json(request: FitRequestJson = Body(...), query_params: FitRequest
     """
     df = pd.DataFrame([item.model_dump() for item in request.data])
 
+    # только для новых моделей добавляем фичи
+    active_id = shared_state["active_model_id"]
+    if active_id in NEW_MODEL_IDS:
+        df = prepare_new_features(df)
+
+    # собираем параметры обучения
     raw = request.params.model_dump() if request.params else {}
     if request.xml_params:
         try:
@@ -139,7 +129,7 @@ async def fit_json(request: FitRequestJson = Body(...), query_params: FitRequest
             raw.update(p)
         except (ExpatError, ValueError) as e:
             raise HTTPException(422, f"Ошибка парсинга XML: {e}") from e
-    #
+
     for k, v in {
         "alpha": query_params.alpha,
         "max_iter": query_params.max_iter,
@@ -156,7 +146,7 @@ async def fit_csv(
     file: UploadFile = File(...),
     params_json: str = Form("{}"),
     query_params: FitRequestQueryParams = Depends(),
-    xml_params: Optional[str] = Body(""),
+    xml_params: Optional[str] = Body("")
 ):
     """Обучает модель на данных в формате CSV
     с поддержкой разных форматов параметров:
@@ -167,8 +157,11 @@ async def fit_csv(
     Возвращает:
         dict: Результат обучения с метриками и статусом
     """
-
     df = check_csv_file(file)
+
+    active_id = shared_state["active_model_id"]
+    if active_id in NEW_MODEL_IDS:
+        df = prepare_new_features(df)
 
     try:
         raw = json.loads(params_json)
@@ -176,7 +169,6 @@ async def fit_csv(
         raise HTTPException(422, f"Ошибка чтения JSON-параметров: {e}") from e
 
     try:
-        print(raw)
         validated_params = HyperParams(**raw).model_dump()
     except ValidationError as e:
         raise HTTPException(422, f"Ошибка проверки параметров: {e.errors()}") from e
@@ -190,6 +182,7 @@ async def fit_csv(
             validated_params.update(p)
         except (ExpatError, ValueError) as e:
             raise HTTPException(422, f"Ошибка парсинга XML: {e}") from e
+
     for k, v in {
         "alpha": query_params.alpha,
         "max_iter": query_params.max_iter,
@@ -199,6 +192,25 @@ async def fit_csv(
             validated_params[k] = v
 
     return _start_training(df, validated_params, shared_state)
+
+
+@app.post("/predict/csv", response_model=List[float])
+def predict_csv(file: UploadFile = File(...)):
+    model_path = get_active_model_path(shared_state)
+    df = check_csv_file(file)
+
+    active_id = shared_state["active_model_id"]
+    if active_id in NEW_MODEL_IDS:
+        df = prepare_new_features(df)
+
+    try:
+        model = joblib.load(model_path)
+        predictions = model.predict(df)
+        return predictions.tolist()
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("Ошибка прогнозирования:\n", tb)
+        raise HTTPException(500, detail=str(e)) from e
 
 
 @app.get("/models", response_model=List[ModelInfo])
@@ -236,18 +248,18 @@ def predict_csv(file: UploadFile = File(...)):
     Возвращается:
         List[float]: Список предсказанных цен
     """
-
     model_path = get_active_model_path(shared_state)
-
     df = check_csv_file(file)
+
+    active_id = shared_state["active_model_id"]
+    if active_id in NEW_MODEL_IDS:
+        df = prepare_new_features(df)
 
     try:
         model = joblib.load(model_path)
         predictions = model.predict(df)
         return predictions.tolist()
-
     except Exception as e:
-        print("Ошибка прогнозирования:", str(e))
         raise HTTPException(500, detail=str(e)) from e
 
 
@@ -263,17 +275,15 @@ async def predict_json(data: List[CarFeatures] = Body(...)):
     """
 
     model_path = get_active_model_path(shared_state)
-
     df = pd.DataFrame([item.model_dump() for item in data])
 
-    print(df.columns)
+    active_id = shared_state["active_model_id"]
+    if active_id in NEW_MODEL_IDS:
+        df = prepare_new_features(df)
 
     try:
         model = joblib.load(model_path)
-        print("Шаги пайплайна:", model.named_steps.keys())
         predictions = model.predict(df)
         return predictions.tolist()
-
     except Exception as e:
-        print("Ошибка прогнозирования:", str(e))
         raise HTTPException(500, detail=str(e)) from e
