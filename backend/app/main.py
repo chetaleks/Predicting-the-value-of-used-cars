@@ -41,6 +41,7 @@ shared_state = {
     "active_model_id": None
 }
 
+
 STANDARD_MODELS = {
     "final_model",
     "catboost_pipeline",
@@ -56,11 +57,13 @@ async def lifespan(_: FastAPI):
     MODELS_DIR.mkdir(exist_ok=True, parents=True)
     print("Приложение запущено")
 
-    # Очищаем старые записи
     shared_state["models"].clear()
 
-    # Подгружаем все .pkl из папки
-    for model_file in MODELS_DIR.glob("*.pkl"):
+    # Подгружаем .joblib и .pkl модели
+    for model_file in MODELS_DIR.glob("*.*"):
+        if model_file.suffix not in {".pkl", ".joblib"}:
+            continue
+
         model_id = model_file.stem
         shared_state["models"][model_id] = {
             "model_path": str(model_file),
@@ -69,17 +72,18 @@ async def lifespan(_: FastAPI):
         }
         print(f"Подгружена модель: {model_id}")
 
-    # Устанавливаем первую модель активной, если ещё нет
     if shared_state["active_model_id"] is None and shared_state["models"]:
         shared_state["active_model_id"] = next(iter(shared_state["models"]))
         print("Активная модель:", shared_state["active_model_id"])
 
     yield
 
-    # По завершении — удаляем все .pkl кроме стандартных
     print("Начата процедура очистки нестандартных моделей...")
-    for model_file in MODELS_DIR.glob("*.pkl"):
-        model_name = model_file.stem  # без .pkl
+    for model_file in MODELS_DIR.glob("*.*"):
+        if model_file.suffix not in {".pkl", ".joblib"}:
+            continue
+
+        model_name = model_file.stem
         if model_name not in STANDARD_MODELS:
             try:
                 model_file.unlink()
@@ -193,26 +197,6 @@ async def fit_csv(
 
     return _start_training(df, validated_params, shared_state)
 
-
-@app.post("/predict/csv", response_model=List[float])
-def predict_csv(file: UploadFile = File(...)):
-    model_path = get_active_model_path(shared_state)
-    df = check_csv_file(file)
-
-    active_id = shared_state["active_model_id"]
-    if active_id in NEW_MODEL_IDS:
-        df = prepare_new_features(df)
-
-    try:
-        model = joblib.load(model_path)
-        predictions = model.predict(df)
-        return predictions.tolist()
-    except Exception as e:
-        tb = traceback.format_exc()
-        print("Ошибка прогнозирования:\n", tb)
-        raise HTTPException(500, detail=str(e)) from e
-
-
 @app.get("/models", response_model=List[ModelInfo])
 def get_models():
     """Получение списка всех моделей"""
@@ -286,4 +270,6 @@ async def predict_json(data: List[CarFeatures] = Body(...)):
         predictions = model.predict(df)
         return predictions.tolist()
     except Exception as e:
+        tb = traceback.format_exc()
+        print("Ошибка прогнозирования:\n", tb)
         raise HTTPException(500, detail=str(e)) from e
