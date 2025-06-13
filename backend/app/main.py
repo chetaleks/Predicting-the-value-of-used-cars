@@ -1,5 +1,5 @@
 import json
-import sys
+import sys, os
 import uuid
 import traceback
 from contextlib import asynccontextmanager
@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 from sklearn.linear_model import Ridge
 
-from .helper import check_csv_file, get_active_model_path, prepare_new_features
+from .custom_preprocessor import CustomPreprocessor
+from .missing_imputer import MissingValueImputer
+from .helper import check_csv_file, get_active_model_path
 from .schemas import (
     CarFeatures,
     HyperParams,
@@ -26,25 +28,14 @@ from .schemas import (
 )
 from .train_process import _start_training
 from .paths import MODELS_DIR
-from .state import shared_state
+from .state import shared_state, STANDARD_MODELS, OLD_MODEL_IDS, NEW_MODEL_IDS
 from . import (
     model_trainer as _mt,
 )  # Чтобы установить инициализированную модель
 
-
 sys.modules["model_trainer"] = _mt  # Чтобы установить инициализированную модель
 
 pd.set_option("future.no_silent_downcasting", True)
-
-STANDARD_MODELS = {
-    "final_model",
-    "catboost_pipeline",
-    "catboost_pipeline_old",
-    "lgbm_pipeline",
-    "lgbm_pipeline_old",
-}
-
-NEW_MODEL_IDS = {"catboost_pipeline", "lgbm_pipeline"}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -113,8 +104,6 @@ async def fit_json(request: FitRequestJson = Body(...), query_params: FitRequest
 
     # только для новых моделей добавляем фичи
     active_id = shared_state["active_model_id"]
-    if active_id in NEW_MODEL_IDS:
-        df = prepare_new_features(df)
 
     # собираем параметры обучения
     raw = request.params.model_dump() if request.params else {}
@@ -158,8 +147,6 @@ async def fit_csv(
     df = check_csv_file(file)
 
     active_id = shared_state["active_model_id"]
-    if active_id in NEW_MODEL_IDS:
-        df = prepare_new_features(df)
 
     try:
         raw = json.loads(params_json)
@@ -230,14 +217,14 @@ def predict_csv(file: UploadFile = File(...)):
     df = check_csv_file(file)
 
     active_id = shared_state["active_model_id"]
-    if active_id in NEW_MODEL_IDS:
-        df = prepare_new_features(df)
-
+    
     try:
         model = joblib.load(model_path)
         predictions = model.predict(df)
         return predictions.tolist()
     except Exception as e:
+        tb = traceback.format_exc()
+        print("Ошибка прогнозирования:\n", tb)
         raise HTTPException(500, detail=str(e)) from e
 
 
@@ -256,8 +243,6 @@ async def predict_json(data: List[CarFeatures] = Body(...)):
     df = pd.DataFrame([item.model_dump() for item in data])
 
     active_id = shared_state["active_model_id"]
-    if active_id in NEW_MODEL_IDS:
-        df = prepare_new_features(df)
 
     try:
         model = joblib.load(model_path)
