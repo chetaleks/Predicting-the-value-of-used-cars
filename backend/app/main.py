@@ -10,6 +10,7 @@ from xml.parsers.expat import ExpatError
 
 import joblib
 import pandas as pd
+import numpy as np
 import xmltodict
 from fastapi import Body, FastAPI, File, HTTPException, Form, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -221,6 +222,8 @@ def predict_csv(file: UploadFile = File(...)):
     try:
         model = joblib.load(model_path)
         predictions = model.predict(df)
+        if active_id in NEW_MODEL_IDS:
+            predictions = np.expm1(predictions)
         return predictions.tolist()
     except Exception as e:
         tb = traceback.format_exc()
@@ -247,6 +250,8 @@ async def predict_json(data: List[CarFeatures] = Body(...)):
     try:
         model = joblib.load(model_path)
         predictions = model.predict(df)
+        if active_id in NEW_MODEL_IDS:
+            predictions = np.expm1(predictions)
         return predictions.tolist()
     except Exception as e:
         tb = traceback.format_exc()
