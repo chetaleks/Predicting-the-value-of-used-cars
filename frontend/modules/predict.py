@@ -28,7 +28,6 @@ FEATURE_FIELDS = [
     ("price", float, 0.0),
     ("price_segment", str, ""),
     ("auto_class", str, ""),
-    ("horse_power", int, 100),
     ("tags", str, ""),
     ("equipment", str, ""),
     ("complectation_available_options", str, ""),

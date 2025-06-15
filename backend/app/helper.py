@@ -3,6 +3,11 @@ from pathlib import Path
 from fastapi import HTTPException
 from pydantic import ValidationError
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import PolynomialFeatures
+from scipy.cluster import hierarchy
+from scipy.spatial.distance import squareform
+from pandas.api.types import is_numeric_dtype
 
 from .schemas import CarFeatures
 
@@ -41,3 +46,4 @@ def get_active_model_path(shared_state: dict) -> str:
         raise HTTPException(500, detail="Файл модели не найден")
 
     return model_path
+
