@@ -43,3 +43,11 @@
 - MAE: 970054.78
 - R²: 0.57
 - лучшие гиперпараметры: l1_ratio = 0.8, alpha = 0.9
+
+**Ridge-regression с использованием колонок `tags`, `complectation_available_options`, `equipment` и новыми признаками:**
+- MSE: 9621822319085.46
+- MAE: 420725.29
+- R²: 0.6082
+- business_mae:420725.29
+- acceptable_rate:46.66
+- лучшие гиперпараметры: alpha = 1, solver = lsqr
